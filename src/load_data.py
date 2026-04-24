@@ -1,4 +1,5 @@
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, MetaData, Table, Column, Integer, String, Date, Float, UniqueConstraint
+from sqlalchemy.dialects.postgresql import insert
 import pandas as pd
 import os
 from dotenv import load_dotenv
@@ -25,10 +26,44 @@ def get_engine():
     connect_args={'client_encoding': 'utf8'})
 
 engine = get_engine()
+meta = MetaData()
+
+def definir_e_criar_tabela(nome_tabela):
+    tabela = Table(
+        nome_tabela, 
+        meta,
+
+        Column('id', Integer, primary_key=True, autoincrement=True),
+        
+        Column('data_inicio', Date, nullable=False),
+        Column('data_fim', Date, nullable=False),
+        Column('combustivel', String, nullable=False),
+        Column('preco_medio_brasil', Float), 
+        Column('distribuicao', Float),  
+        Column('porcentagem_distribuicao', Float),  
+        Column('custo_etanol_anidro', Float),  
+        Column('porcentagem_custo_etanol_anidro', Float),  
+        Column('icms', Float),  
+        Column('porcentagem_icms', Float),  
+        Column('imposto_federal', Float),  
+        Column('porcentagem_impostos_federais', Float),  
+        Column('parcela_petrobras', Float),  
+        Column('porcentagem_parcela_petrobras', Float),  
+        Column('biodiesel', Float),  
+        Column('porcentagem_biodiesel', Float),  
+        
+        UniqueConstraint('data_inicio', 'data_fim', 'combustivel', name=f'uix_{nome_tabela}_conflito'),
+        
+        extend_existing=True 
+    )
+    
+    meta.create_all(engine)
+    logging.info(f"Tabela '{nome_tabela}' verificada/criada com sucesso.")
+    
+    return tabela
 
 def carregar_dados(nome_tabela, df):
-    meta = MetaData()
-    tabela = Table(nome_tabela, meta, autoload_with=engine)
+    tabela = definir_e_criar_tabela(nome_tabela)
 
     dados = df.to_dict(orient='records')
 
