@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine, MetaData, Table, Column, Integer, String, Date, Float, UniqueConstraint
+from sqlalchemy import create_engine, MetaData, Table, Column, Integer, String, Date, Float, UniqueConstraint, inspect 
 from sqlalchemy.dialects.postgresql import insert
 import pandas as pd
 import os
@@ -14,15 +14,16 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 env_path = BASE_DIR / "config" / ".env"
 load_dotenv(env_path)
 
-user = os.getenv('user')
-password = os.getenv('senha')
-database = os.getenv('database')
-host = 'host.docker.internal'  # Usando host.docker.internal para acessar o banco de dados no host
+host = os.getenv('DB_HOST')
+port = os.getenv('DB_PORT')
+user = os.getenv('DB_USER')
+password = os.getenv('DB_PASSWORD')
+database = os.getenv('DB_NAME')
 
 def get_engine():
-    logging.info(f"Conectado em {host}:5432/{database}")
+    logging.info(f"Conectado em {host}:{port}/{database}")
     return create_engine(
-    f'postgresql+psycopg2://{user}:{password}@{host}:5432/{database}',
+    f'postgresql+psycopg2://{user}:{password}@{host}:{port}/{database}',
     connect_args={'client_encoding': 'utf8'})
 
 engine = get_engine()
@@ -32,9 +33,7 @@ def definir_e_criar_tabela(nome_tabela):
     tabela = Table(
         nome_tabela, 
         meta,
-
         Column('id', Integer, primary_key=True, autoincrement=True),
-        
         Column('data_inicio', Date, nullable=False),
         Column('data_fim', Date, nullable=False),
         Column('combustivel', String, nullable=False),
@@ -51,15 +50,18 @@ def definir_e_criar_tabela(nome_tabela):
         Column('porcentagem_parcela_petrobras', Float),  
         Column('biodiesel', Float),  
         Column('porcentagem_biodiesel', Float),  
-        
-        UniqueConstraint('data_inicio', 'data_fim', 'combustivel', name=f'uix_{nome_tabela}_conflito'),
-        
-        extend_existing=True 
+
+        UniqueConstraint(
+            'data_inicio', 'data_fim', 'combustivel',
+            name=f'uix_{nome_tabela}_conflito'
+        ),
+        extend_existing=True
     )
-    
-    meta.create_all(engine)
+ 
+    meta.create_all(engine, checkfirst=True)
+
     logging.info(f"Tabela '{nome_tabela}' verificada/criada com sucesso.")
-    
+
     return tabela
 
 def carregar_dados(nome_tabela, df):
@@ -73,11 +75,13 @@ def carregar_dados(nome_tabela, df):
 
         stmt = stmt.on_conflict_do_nothing(
             index_elements=['data_inicio', 'data_fim', 'combustivel']
-        )
+        ).returning(tabela.c.data_inicio)
 
-        conn.execute(stmt)
+        result = conn.execute(stmt)
 
-    logging.info(f"{len(df)} registros processados (bulk insert).")
+        novos_registros = len(result.fetchall())
 
-    df_check = pd.read_sql(f"SELECT COUNT(*) FROM {nome_tabela}", engine)
+        df_check = pd.read_sql(f"SELECT COUNT(*) FROM {nome_tabela}", engine)
+
+    logging.info(f"{novos_registros} novos registros inseridos.")
     logging.info(f"Total de registros na tabela {nome_tabela}: {df_check.iloc[0,0]}")
